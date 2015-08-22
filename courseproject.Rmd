@@ -1,0 +1,74 @@
+---
+title: "Detecting Correct Execution of Barbell Lifts"
+author: "Jeroen van Zundert"
+date: "August 22, 2015"
+output: pdf_document
+---
+Data courtesy of:
+
+Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. Wearable Computing: Accelerometers' Data Classification of Body Postures and Movements. Proceedings of 21st Brazilian Symposium on Artificial Intelligence. Advances in Artificial Intelligence - SBIA 2012. In: Lecture Notes in Computer Science. , pp. 52-61. Curitiba, PR: Springer Berlin / Heidelberg, 2012. ISBN 978-3-642-34458-9. DOI: 10.1007/978-3-642-34459-6_6. 
+
+# Detecting Correct Execution of Barbell Lifts
+
+## Synopsis
+In this analysis we use data on nearly 20000 barbell lifts. Data contains measurements of accelerometers on the belt, forearm, arm and dumbells. The goal is, given these measurements, to classify the exercises in one of five separate classes. Classification has been done using a simple classification tree and random forests. The random forest method performs very well. The out-of-sample error is estimated to be 0.43% using 2-fold cross-validation. The most important variable is roll_belt.
+
+## Data Processing
+The data is obtained from the internet and is available in a csv format.
+```{r, cache = TRUE}
+local_file <- 'pml-training.csv'
+if (!exists(local_file)) {
+  download.file('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv', local_file,'wget')
+}
+training <- read.csv(local_file)
+
+local_file <- 'pml-testing.csv'
+if (!exists(local_file)) {
+  download.file('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv', local_file,'wget')
+}
+testing <- read.csv(local_file)
+```
+
+Remove NA columns and columns 1 to 7 which do not contain relevant data (such as name of the person, time stamp at which exercise was performed, etc)
+```{r}
+col_select <- (colSums(is.na(testing))==0) & (colSums(is.na(training))==0) 
+testing_clean <- testing[, col_select]
+testing_clean<-testing_clean[,8:ncol(testing_clean)]
+
+training_clean <- training[ , col_select]
+training_clean<-training_clean[,8:ncol(training_clean)]
+```
+
+## Prediction
+We set the seed and use 2-fold cross-validation to assess the out-of-sample error. Two-fold is sufficient with such a large data set (nearly 20000 observations with only 52 predictors). Also, running time becomes a problem otherwise with more elaborate algorithms.
+
+The algorithm for this problem should be able to make a distinction between 5 classes. Classification tree and random forest algorithms are well suited for this. I start with a simple classification tree to set a benchmark that runs fast:
+
+```{r}
+library(caret)
+set.seed(1000)
+fitcontrol <- trainControl(method="cv", number=2) # 2-fold cross validation
+fit <- train(classe ~., data=training_clean, trControl=fitcontrol,  method="rpart") # train with rpart
+print(fit)
+plot(fit$finalModel)
+text(fit$finalModel)
+table(predict(fit), training_clean$classe)
+```
+
+The accuracy is 52.3%. The matrix shows that all but class A are very hard to predict for a straightforward classification tree algorithm.
+
+Next I use the random-forest method:
+```{r}
+set.seed(1000)
+fitcontrol <- trainControl(method="cv", number=2)
+fit <- train(classe ~., data=training_clean, trControl=fitcontrol,  method="rf")
+print(fit)
+print(fit$finalModel)
+```
+Which has a near zero eror rate (0.43%). Based on this cross-validated training, the out-of-sample error is expected to be only 0.43%.
+
+What also is interesting are the variables with the most impact:
+```{r}
+varImp(fit)
+```
+roll_belt is the most important variable, followed by pitch_forearm and yaw_belt.
